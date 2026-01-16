@@ -107,4 +107,23 @@ button:active { background-color: #5a0000; }
     color: #333;
     margin-bottom: 5px; /* Spacing between buttons */
 }
+
 .custom-map-btn:hover { background: #f4f4f4; }
+
+/* ... existing styles ... */
+
+/* NEW: Styles for the Map Labels */
+.route-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #FFFFFF; /* White Text */
+    font-weight: bold;
+    font-size: 11px;
+    /* Create a black outline (halo) so text pops on any background */
+    text-shadow: 
+        -1px -1px 0 #000,  
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
+}
