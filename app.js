@@ -9,12 +9,12 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// Add Controls
+// Add Standard Controls
 L.control.zoom({ position: 'topleft' }).addTo(map);
 L.control.scale({ position: 'bottomleft', imperial: true, metric: false }).addTo(map);
 
 // --- GLOBAL VARIABLES ---
-let allRouteData = []; // Stores the raw data for filtering
+let allRouteData = []; 
 let currentOperator = "";
 let currentTruck = "";
 let watchId = null;
@@ -23,7 +23,7 @@ let lastKnownLocation = null;
 // --- LAYERS ---
 const routeLayer = L.esri.featureLayer({
   url: routeLayerUrl,
-  style: { color: 'red', weight: 4 },
+  style: { color: 'red', weight: 4 }, // Routes are RED
   onEachFeature: function(feature, layer) {
     layer.on('click', function(e) {
       const lat = e.latlng.lat;
@@ -33,7 +33,6 @@ const routeLayer = L.esri.featureLayer({
       let popupContent = "<b>Route Attributes:</b><br><hr style='margin: 5px 0;'>";
       for (const key in feature.properties) {
           const value = feature.properties[key];
-          // Filter out technical fields
           if(value !== null && key !== "GlobalID" && key !== "Shape__Length" && key !== "OBJECTID") {
              popupContent += `<b>${key}:</b> ${value}<br>`;
           }
@@ -44,7 +43,7 @@ const routeLayer = L.esri.featureLayer({
   }
 });
 
-// Breadcrumb Layer (For history display)
+// Breadcrumb Layer (History = Blue Dots)
 const breadcrumbLayer = L.esri.featureLayer({
     url: breadcrumbLayerUrl,
     pointToLayer: function (geojson, latlng) {
@@ -52,77 +51,62 @@ const breadcrumbLayer = L.esri.featureLayer({
     }
 });
 
-// --- SMART DROPDOWN LOGIC ---
-// 1. Fetch all data ONCE when app loads
+// --- SMART DROPDOWNS ---
 routeLayer.query().where("1=1").run(function(error, featureCollection){
     if (error) { console.error(error); return; }
 
-    // Save data to global variable
     featureCollection.features.forEach(f => {
         allRouteData.push({
-            operator: f.properties.Operator, // Ensure this matches your field name exactly
-            truck: f.properties.Truck_Num    // Ensure this matches your field name exactly
+            operator: f.properties.Operator,
+            truck: f.properties.Truck_Num
         });
     });
-
-    // Initial Populate
     updateDropdowns(null);
 });
 
-// 2. Function to filter and update lists
 function updateDropdowns(changedBy) {
     const opSelect = document.getElementById("operatorInput");
     const truckSelect = document.getElementById("truckInput");
-
-    // Get current selections
     const selectedOp = opSelect.value;
     const selectedTruck = truckSelect.value;
 
-    // Filter the data based on selection
     let filteredData = allRouteData.filter(item => {
         let matchOp = (selectedOp === "") || (item.operator === selectedOp);
-        let matchTruck = (selectedTruck === "") || (item.truck == selectedTruck); // use == for loose comparison (string vs number)
+        let matchTruck = (selectedTruck === "") || (item.truck == selectedTruck); 
         return matchOp && matchTruck;
     });
 
-    // If nothing matches (edge case), reset to full list
     if (filteredData.length === 0) filteredData = allRouteData;
 
-    // Extract unique values from the filtered list
     const availableOps = new Set(filteredData.map(i => i.operator).filter(x => x));
     const availableTrucks = new Set(filteredData.map(i => i.truck).filter(x => x));
 
-    // REBUILD OPERATOR DROPDOWN (If user didn't just change it)
     if (changedBy !== "operator") {
         opSelect.innerHTML = '<option value="">-- Select Name --</option>';
         Array.from(availableOps).sort().forEach(name => {
             let opt = document.createElement("option");
-            opt.value = name;
-            opt.innerText = name;
-            if (name === selectedOp) opt.selected = true; // Keep selection
+            opt.value = name; opt.innerText = name;
+            if (name === selectedOp) opt.selected = true; 
             opSelect.appendChild(opt);
         });
     }
 
-    // REBUILD TRUCK DROPDOWN (If user didn't just change it)
     if (changedBy !== "truck") {
         truckSelect.innerHTML = '<option value="">-- Select Truck --</option>';
         Array.from(availableTrucks).sort((a,b)=>a-b).forEach(num => {
             let opt = document.createElement("option");
-            opt.value = num;
-            opt.innerText = "Truck " + num;
-            if (num == selectedTruck) opt.selected = true; // Keep selection
+            opt.value = num; opt.innerText = "Truck " + num;
+            if (num == selectedTruck) opt.selected = true; 
             truckSelect.appendChild(opt);
         });
     }
 }
 
-// Add Event Listeners to trigger the filter
 document.getElementById("operatorInput").addEventListener("change", () => updateDropdowns("operator"));
 document.getElementById("truckInput").addEventListener("change", () => updateDropdowns("truck"));
 
 
-// --- MAIN LOGIC ---
+// --- MAIN START FUNCTION ---
 function startShift() {
   currentOperator = document.getElementById('operatorInput').value;
   currentTruck = document.getElementById('truckInput').value;
@@ -132,20 +116,17 @@ function startShift() {
     return;
   }
 
-  // Hide Login
   document.getElementById('panel').style.display = 'none';
   
-  // 1. UPDATE LABEL (The "This is John Doe map" request)
+  // Update Label
   const label = document.getElementById('activeOperatorLabel');
   label.style.display = 'block';
-  
   let labelText = "Viewing Route";
   if(currentOperator) labelText += ` for: ${currentOperator}`;
   if(currentTruck) labelText += ` — Truck ${currentTruck}`;
-  
   label.innerText = labelText;
 
-  // 2. FILTER MAP
+  // Filter Logic
   let sqlParts = [];
   if (currentOperator) sqlParts.push(`Operator = '${currentOperator}'`);
   if (currentTruck) sqlParts.push(`Truck_Num = ${currentTruck}`);
@@ -157,23 +138,17 @@ function startShift() {
     if(!error && latLngBounds) map.fitBounds(latLngBounds);
   });
 
-  // 3. LOAD HISTORY (The "80% Done" request)
   loadTodaysBreadcrumbs();
-
-  // 4. START TRACKING
   startTracking();
 }
 
 function loadTodaysBreadcrumbs() {
-    // Calculate timestamp for 24 hours ago
     const yesterday = new Date();
     yesterday.setHours(yesterday.getHours() - 24);
     
-    // Query breadcrumbs for this truck/operator created recently
     let whereClause = `Timestamp > ${yesterday.getTime()}`;
     if (currentTruck) whereClause += ` AND Truck_Num = ${currentTruck}`;
     
-    // Add them to the map permanently for this session
     breadcrumbLayer.setWhere(whereClause);
     breadcrumbLayer.addTo(map);
 }
@@ -191,12 +166,12 @@ function success(position) {
   lastKnownLocation = [lat, lng];
 
   if (!window.myLocationMarker) {
-    window.myLocationMarker = L.circleMarker([lat, lng], { color: '#00FF00', radius: 10, fillOpacity: 1 }).addTo(map); // Bright Green for "ME"
+    // Current location is GREEN
+    window.myLocationMarker = L.circleMarker([lat, lng], { color: '#00FF00', radius: 10, fillOpacity: 1 }).addTo(map); 
   } else {
     window.myLocationMarker.setLatLng([lat, lng]);
   }
 
-  // Send Breadcrumb
   const feature = {
     type: "Feature",
     geometry: { type: "Point", coordinates: [lng, lat] },
@@ -212,25 +187,94 @@ function success(position) {
 
 function error() { console.log("GPS Error"); }
 
-// Map Buttons (Home, Locate)
+// --- CUSTOM MAP BUTTONS (Top Left Stack) ---
+
+// 1. Home Button
 L.Control.Home = L.Control.extend({
     onAdd: function(map) {
         const btn = L.DomUtil.create('div', 'custom-map-btn');
         btn.innerHTML = "🏠";
-        btn.onclick = function() { location.reload(); }; // Reload page to reset
+        btn.title = "Reset / Logout";
+        btn.onclick = function() { location.reload(); }; 
         return btn;
     }
 });
 new L.Control.Home({ position: 'topleft' }).addTo(map);
 
+// 2. Locate Button
 L.Control.Locate = L.Control.extend({
     onAdd: function(map) {
         const btn = L.DomUtil.create('div', 'custom-map-btn');
         btn.innerHTML = "🎯";
+        btn.title = "Find Me";
         btn.onclick = function() {
             if(lastKnownLocation) map.setView(lastKnownLocation, 17);
+            else alert("Waiting for GPS...");
         };
         return btn;
     }
 });
 new L.Control.Locate({ position: 'topleft' }).addTo(map);
+
+// 3. Legend Button (Restored!)
+L.Control.Legend = L.Control.extend({
+    onAdd: function(map) {
+        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+        
+        // The Button
+        const btn = L.DomUtil.create('a', 'custom-map-btn', container);
+        btn.innerHTML = "📝"; // Notepad icon
+        btn.title = "Show Legend";
+        btn.href = "#";
+        btn.style.width = "30px"; 
+        btn.style.height = "30px";
+        btn.style.lineHeight = "30px";
+        btn.style.display = "block";
+        btn.style.textAlign = "center";
+        btn.style.textDecoration = "none";
+        btn.style.backgroundColor = "white";
+        btn.style.fontSize = "18px";
+
+        // The Legend Box (Hidden by default)
+        const legendBox = L.DomUtil.create('div', '', container);
+        legendBox.style.display = 'none';
+        legendBox.style.backgroundColor = 'white';
+        legendBox.style.padding = '10px';
+        legendBox.style.minWidth = '150px';
+        legendBox.style.position = 'absolute';
+        legendBox.style.top = '0px';
+        legendBox.style.left = '35px'; // Appears to the right of the button
+        legendBox.style.border = '2px solid rgba(0,0,0,0.2)';
+        legendBox.style.borderRadius = '4px';
+
+        // Legend Content
+        legendBox.innerHTML = `
+            <strong>Map Legend</strong><br><br>
+            <div style="display:flex; align-items:center; margin-bottom:5px;">
+                <div style="width:20px; height:4px; background:red; margin-right:8px;"></div>
+                <span>Routes</span>
+            </div>
+            <div style="display:flex; align-items:center; margin-bottom:5px;">
+                <div style="width:10px; height:10px; background:#00FF00; border-radius:50%; margin-right:8px;"></div>
+                <span>My Live Location</span>
+            </div>
+            <div style="display:flex; align-items:center;">
+                <div style="width:10px; height:10px; background:blue; border-radius:50%; margin-right:8px;"></div>
+                <span>History (Work Done)</span>
+            </div>
+        `;
+
+        // Toggle visibility on click
+        btn.onclick = function(e) {
+            e.preventDefault();
+            if (legendBox.style.display === 'none') {
+                legendBox.style.display = 'block';
+            } else {
+                legendBox.style.display = 'none';
+            }
+        };
+
+        return container;
+    }
+});
+new L.Control.Legend({ position: 'topleft' }).addTo(map);
