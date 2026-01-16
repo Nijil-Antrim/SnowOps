@@ -112,18 +112,19 @@ button:active { background-color: #5a0000; }
 
 /* ... existing styles ... */
 
-/* NEW: Styles for the Map Labels */
-.route-label {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    color: #FFFFFF; /* White Text */
+/* We use SVG properties (fill instead of color) */
+.route-text-path {
+    fill: #FFFFFF; /* White text color */
     font-weight: bold;
-    font-size: 11px;
-    /* Create a black outline (halo) so text pops on any background */
+    font-family: sans-serif;
+    font-size: 9px; /* Much smaller font size for cleaner look */
+    /* Black halo outline for readability against map */
     text-shadow: 
         -1px -1px 0 #000,  
          1px -1px 0 #000,
         -1px  1px 0 #000,
          1px  1px 0 #000;
+    /* Crucial: ignore mouse clicks on text so you can still click the red line underneath */
+    pointer-events: none; 
 }
+
