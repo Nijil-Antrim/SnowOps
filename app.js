@@ -23,25 +23,41 @@ let lastKnownLocation = null;
 // --- LAYERS ---
 const routeLayer = L.esri.featureLayer({
   url: routeLayerUrl,
+// ... inside routeLayer config ...
   style: { color: 'red', weight: 4 }, // Routes are RED
   onEachFeature: function(feature, layer) {
     
-    // --- NEW: ADD LABELS TO LINES ---
-    const opName = feature.properties.Operator || "Unassigned";
+    // --- NEW: ADD LABELS ALONG THE PATH ---
+    const opName = feature.properties.Operator || "";
     const truckNum = feature.properties.Truck_Num || "?";
     
-    // The text to display: "John Doe - Truck 41"
-    const labelText = `${opName} - Truck ${truckNum}`;
+    // Shorter label format to save space: "J. Doe (T-41)"
+    // We take the first letter of the first name, plus the last name.
+    let shortName = opName;
+    const nameParts = opName.split(" ");
+    if(nameParts.length > 1) {
+         shortName = nameParts[0][0] + ". " + nameParts[nameParts.length - 1];
+    }
+    
+    const labelText = `${shortName} (T-${truckNum})`;
 
-    layer.bindTooltip(labelText, {
-      permanent: true,      // Always show (don't wait for hover)
-      direction: "center",  // Place on center of line
-      className: "route-label" // Connects to the CSS we added
-    });
+    // Use the new plugin function .setText() instead of .bindTooltip()
+    // Only apply if it's a line (polyline or polygon)
+    if (layer.setText) {
+        layer.setText(labelText, {
+            center: true,      // Place in middle of segment
+            below: false,      // Place directly on top of line
+            offset: 0,
+            orientation: 'flip', // Ensures text isn't upside down
+            // Connect to our new CSS class
+            attributes: { class: 'route-text-path' } 
+        });
+    }
     // -------------------------------
 
-    // Click Logic (Popup)
+    // Click Logic (Popup) - Stays the same
     layer.on('click', function(e) {
+      // ... existing popup code ...
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
       const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
@@ -49,7 +65,6 @@ const routeLayer = L.esri.featureLayer({
       let popupContent = "<b>Route Attributes:</b><br><hr style='margin: 5px 0;'>";
       for (const key in feature.properties) {
           const value = feature.properties[key];
-          // Hide technical fields
           if(value !== null && key !== "GlobalID" && key !== "Shape__Length" && key !== "OBJECTID") {
              popupContent += `<b>${key}:</b> ${value}<br>`;
           }
@@ -293,4 +308,5 @@ L.Control.Legend = L.Control.extend({
     }
 });
 new L.Control.Legend({ position: 'topleft' }).addTo(map);
+
 
