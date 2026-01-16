@@ -1,0 +1,110 @@
+/* 1. Layout: Flexbox to stack Header and Map */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh; /* Full screen height */
+    overflow: hidden;
+}
+
+/* 2. The Red Header */
+#header {
+    height: 50px;
+    background-color: #8B0000; /* Dark Red like Antrim screenshot */
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    color: white;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 2000;
+}
+
+#header img {
+    height: 35px;
+    margin-right: 15px;
+}
+
+#header h1 {
+    font-size: 1.2rem;
+    margin: 0;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* 3. The Map Area */
+#map {
+    flex-grow: 1; /* Fills the rest of the screen */
+    position: relative;
+    z-index: 0;
+}
+
+/* 4. The Login Panel (Centered Overlay) */
+#panel {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%); /* Dead center */
+    background: white;
+    padding: 20px;
+    z-index: 3000;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    width: 90%;
+    max-width: 400px;
+    border-top: 5px solid #8B0000;
+}
+
+select, button {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+button {
+    background-color: #8B0000;
+    color: white;
+    font-weight: bold;
+    border: none;
+    cursor: pointer;
+}
+button:active { background-color: #5a0000; }
+
+/* 5. The "Current Route" Label (Floating on Map) */
+#activeOperatorLabel {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: 2px solid #8B0000;
+    color: #8B0000;
+    font-weight: bold;
+    z-index: 1000;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    display: none; /* Hidden until login */
+    white-space: nowrap;
+}
+
+/* 6. Custom Map Buttons (Home, Locate, Legend) */
+.custom-map-btn {
+    background: white;
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    border-radius: 2px;
+    cursor: pointer;
+    border: 2px solid rgba(0,0,0,0.2);
+    font-size: 18px;
+    color: #333;
+    margin-bottom: 5px; /* Spacing between buttons */
+}
+.custom-map-btn:hover { background: #f4f4f4; }
