@@ -25,6 +25,22 @@ const routeLayer = L.esri.featureLayer({
   url: routeLayerUrl,
   style: { color: 'red', weight: 4 }, // Routes are RED
   onEachFeature: function(feature, layer) {
+    
+    // --- NEW: ADD LABELS TO LINES ---
+    const opName = feature.properties.Operator || "Unassigned";
+    const truckNum = feature.properties.Truck_Num || "?";
+    
+    // The text to display: "John Doe - Truck 41"
+    const labelText = `${opName} - Truck ${truckNum}`;
+
+    layer.bindTooltip(labelText, {
+      permanent: true,      // Always show (don't wait for hover)
+      direction: "center",  // Place on center of line
+      className: "route-label" // Connects to the CSS we added
+    });
+    // -------------------------------
+
+    // Click Logic (Popup)
     layer.on('click', function(e) {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
@@ -33,6 +49,7 @@ const routeLayer = L.esri.featureLayer({
       let popupContent = "<b>Route Attributes:</b><br><hr style='margin: 5px 0;'>";
       for (const key in feature.properties) {
           const value = feature.properties[key];
+          // Hide technical fields
           if(value !== null && key !== "GlobalID" && key !== "Shape__Length" && key !== "OBJECTID") {
              popupContent += `<b>${key}:</b> ${value}<br>`;
           }
@@ -216,14 +233,14 @@ L.Control.Locate = L.Control.extend({
 });
 new L.Control.Locate({ position: 'topleft' }).addTo(map);
 
-// 3. Legend Button (Restored!)
+// 3. Legend Button
 L.Control.Legend = L.Control.extend({
     onAdd: function(map) {
         const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
         
         // The Button
         const btn = L.DomUtil.create('a', 'custom-map-btn', container);
-        btn.innerHTML = "📝"; // Notepad icon
+        btn.innerHTML = "📝"; 
         btn.title = "Show Legend";
         btn.href = "#";
         btn.style.width = "30px"; 
@@ -243,11 +260,10 @@ L.Control.Legend = L.Control.extend({
         legendBox.style.minWidth = '150px';
         legendBox.style.position = 'absolute';
         legendBox.style.top = '0px';
-        legendBox.style.left = '35px'; // Appears to the right of the button
+        legendBox.style.left = '35px';
         legendBox.style.border = '2px solid rgba(0,0,0,0.2)';
         legendBox.style.borderRadius = '4px';
 
-        // Legend Content
         legendBox.innerHTML = `
             <strong>Map Legend</strong><br><br>
             <div style="display:flex; align-items:center; margin-bottom:5px;">
@@ -264,7 +280,6 @@ L.Control.Legend = L.Control.extend({
             </div>
         `;
 
-        // Toggle visibility on click
         btn.onclick = function(e) {
             e.preventDefault();
             if (legendBox.style.display === 'none') {
@@ -278,3 +293,4 @@ L.Control.Legend = L.Control.extend({
     }
 });
 new L.Control.Legend({ position: 'topleft' }).addTo(map);
+
