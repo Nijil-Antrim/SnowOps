@@ -4,84 +4,26 @@ const routeLayerUrl = "https://services9.arcgis.com/t2uVlIEulJrk7ioC/arcgis/rest
 const breadcrumbLayerUrl = "https://services9.arcgis.com/t2uVlIEulJrk7ioC/arcgis/rest/services/Snowplow_Breadcrumbs/FeatureServer/0"; 
 
 // Initialize Map
-const map = L.map('map', {
-    zoomControl: false // We will add zoom control manually to position it
-}).setView([39.7732, -77.7242], 13);
-
+const map = L.map('map', { zoomControl: false }).setView([39.7732, -77.7242], 13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// 2. Add Controls in specific order (Top Left)
-// Zoom Control
+// Add Controls
 L.control.zoom({ position: 'topleft' }).addTo(map);
-
-// --- Custom "Home" Button (Reset Filter) ---
-const HomeControl = L.Control.extend({
-    options: { position: 'topleft' },
-    onAdd: function(map) {
-        const btn = L.DomUtil.create('div', 'custom-map-btn');
-        btn.innerHTML = "🏠"; // Home Icon
-        btn.title = "Reset Filter / Logout";
-        btn.onclick = function() {
-            // Reset everything
-            routeLayer.setWhere("1=1"); // Show all (or hide all if preferred)
-            document.getElementById('panel').style.display = 'block'; // Show login
-            document.getElementById('activeOperatorLabel').style.display = 'none'; // Hide label
-            map.setView([39.7732, -77.7242], 13); // Reset Zoom
-        };
-        return btn;
-    }
-});
-map.addControl(new HomeControl());
-
-// --- Custom "Locate Me" Button ---
-const LocateControl = L.Control.extend({
-    options: { position: 'topleft' },
-    onAdd: function(map) {
-        const btn = L.DomUtil.create('div', 'custom-map-btn');
-        btn.innerHTML = "🎯"; // Target Icon
-        btn.title = "Find My Location";
-        btn.onclick = function() {
-            if(lastKnownLocation) {
-                map.setView(lastKnownLocation, 17);
-            } else {
-                alert("GPS location not yet found. Drive a bit!");
-            }
-        };
-        return btn;
-    }
-});
-map.addControl(new LocateControl());
-
-// --- Custom "Legend" Button ---
-const LegendControl = L.Control.extend({
-    options: { position: 'topleft' },
-    onAdd: function(map) {
-        const btn = L.DomUtil.create('div', 'custom-map-btn');
-        btn.innerHTML = "📝"; // Legend Icon
-        btn.title = "Show Legend";
-        btn.onclick = function() {
-            alert("LEGEND:\n\n🔴 Red Lines: Plowing Routes\n🔵 Blue Dot: Your Live Location");
-        };
-        return btn;
-    }
-});
-map.addControl(new LegendControl());
-
-// --- Scale Bar (Bottom Left) ---
 L.control.scale({ position: 'bottomleft', imperial: true, metric: false }).addTo(map);
 
-
-// 3. Data Layers
+// --- GLOBAL VARIABLES ---
+let allRouteData = []; // Stores the raw data for filtering
 let currentOperator = "";
 let currentTruck = "";
 let watchId = null;
 let lastKnownLocation = null;
 
+// --- LAYERS ---
 const routeLayer = L.esri.featureLayer({
   url: routeLayerUrl,
-  style: { color: 'red', weight: 4 }, // Antrim Red style
+  style: { color: 'red', weight: 4 },
   onEachFeature: function(feature, layer) {
     layer.on('click', function(e) {
       const lat = e.latlng.lat;
@@ -91,7 +33,8 @@ const routeLayer = L.esri.featureLayer({
       let popupContent = "<b>Route Attributes:</b><br><hr style='margin: 5px 0;'>";
       for (const key in feature.properties) {
           const value = feature.properties[key];
-          if(value !== null && key !== "GlobalID" && key !== "Shape__Length") {
+          // Filter out technical fields
+          if(value !== null && key !== "GlobalID" && key !== "Shape__Length" && key !== "OBJECTID") {
              popupContent += `<b>${key}:</b> ${value}<br>`;
           }
       }
@@ -101,33 +44,85 @@ const routeLayer = L.esri.featureLayer({
   }
 });
 
-// Auto-populate Dropdowns
-routeLayer.query().where("1=1").run(function(error, featureCollection){
-    if (error) return;
-    let operators = new Set();
-    let trucks = new Set();
-
-    featureCollection.features.forEach(function(f){
-        if(f.properties.Operator) operators.add(f.properties.Operator);
-        if(f.properties.Truck_Num) trucks.add(f.properties.Truck_Num);
-    });
-
-    const opSelect = document.getElementById("operatorInput");
-    opSelect.innerHTML = '<option value="">-- Select Your Name --</option>';
-    Array.from(operators).sort().forEach(name => {
-        let opt = document.createElement("option");
-        opt.value = name; opt.innerText = name; opSelect.appendChild(opt);
-    });
-
-    const truckSelect = document.getElementById("truckInput");
-    truckSelect.innerHTML = '<option value="">-- Select Truck --</option>';
-    Array.from(trucks).sort((a, b) => a - b).forEach(num => {
-        let opt = document.createElement("option");
-        opt.value = num; opt.innerText = "Truck " + num; truckSelect.appendChild(opt);
-    });
+// Breadcrumb Layer (For history display)
+const breadcrumbLayer = L.esri.featureLayer({
+    url: breadcrumbLayerUrl,
+    pointToLayer: function (geojson, latlng) {
+        return L.circleMarker(latlng, { color: 'blue', radius: 4, fillOpacity: 0.5 });
+    }
 });
 
-// 4. Main Logic
+// --- SMART DROPDOWN LOGIC ---
+// 1. Fetch all data ONCE when app loads
+routeLayer.query().where("1=1").run(function(error, featureCollection){
+    if (error) { console.error(error); return; }
+
+    // Save data to global variable
+    featureCollection.features.forEach(f => {
+        allRouteData.push({
+            operator: f.properties.Operator, // Ensure this matches your field name exactly
+            truck: f.properties.Truck_Num    // Ensure this matches your field name exactly
+        });
+    });
+
+    // Initial Populate
+    updateDropdowns(null);
+});
+
+// 2. Function to filter and update lists
+function updateDropdowns(changedBy) {
+    const opSelect = document.getElementById("operatorInput");
+    const truckSelect = document.getElementById("truckInput");
+
+    // Get current selections
+    const selectedOp = opSelect.value;
+    const selectedTruck = truckSelect.value;
+
+    // Filter the data based on selection
+    let filteredData = allRouteData.filter(item => {
+        let matchOp = (selectedOp === "") || (item.operator === selectedOp);
+        let matchTruck = (selectedTruck === "") || (item.truck == selectedTruck); // use == for loose comparison (string vs number)
+        return matchOp && matchTruck;
+    });
+
+    // If nothing matches (edge case), reset to full list
+    if (filteredData.length === 0) filteredData = allRouteData;
+
+    // Extract unique values from the filtered list
+    const availableOps = new Set(filteredData.map(i => i.operator).filter(x => x));
+    const availableTrucks = new Set(filteredData.map(i => i.truck).filter(x => x));
+
+    // REBUILD OPERATOR DROPDOWN (If user didn't just change it)
+    if (changedBy !== "operator") {
+        opSelect.innerHTML = '<option value="">-- Select Name --</option>';
+        Array.from(availableOps).sort().forEach(name => {
+            let opt = document.createElement("option");
+            opt.value = name;
+            opt.innerText = name;
+            if (name === selectedOp) opt.selected = true; // Keep selection
+            opSelect.appendChild(opt);
+        });
+    }
+
+    // REBUILD TRUCK DROPDOWN (If user didn't just change it)
+    if (changedBy !== "truck") {
+        truckSelect.innerHTML = '<option value="">-- Select Truck --</option>';
+        Array.from(availableTrucks).sort((a,b)=>a-b).forEach(num => {
+            let opt = document.createElement("option");
+            opt.value = num;
+            opt.innerText = "Truck " + num;
+            if (num == selectedTruck) opt.selected = true; // Keep selection
+            truckSelect.appendChild(opt);
+        });
+    }
+}
+
+// Add Event Listeners to trigger the filter
+document.getElementById("operatorInput").addEventListener("change", () => updateDropdowns("operator"));
+document.getElementById("truckInput").addEventListener("change", () => updateDropdowns("truck"));
+
+
+// --- MAIN LOGIC ---
 function startShift() {
   currentOperator = document.getElementById('operatorInput').value;
   currentTruck = document.getElementById('truckInput').value;
@@ -137,19 +132,20 @@ function startShift() {
     return;
   }
 
-  // Hide Login, Show Map Info
+  // Hide Login
   document.getElementById('panel').style.display = 'none';
   
-  // UPDATE THE NEW LABEL
+  // 1. UPDATE LABEL (The "This is John Doe map" request)
   const label = document.getElementById('activeOperatorLabel');
   label.style.display = 'block';
-  if(currentOperator) {
-      label.innerText = "Viewing Route for: " + currentOperator;
-  } else {
-      label.innerText = "Viewing Route for Truck: " + currentTruck;
-  }
+  
+  let labelText = "Viewing Route";
+  if(currentOperator) labelText += ` for: ${currentOperator}`;
+  if(currentTruck) labelText += ` — Truck ${currentTruck}`;
+  
+  label.innerText = labelText;
 
-  // Filter Layer
+  // 2. FILTER MAP
   let sqlParts = [];
   if (currentOperator) sqlParts.push(`Operator = '${currentOperator}'`);
   if (currentTruck) sqlParts.push(`Truck_Num = ${currentTruck}`);
@@ -157,12 +153,29 @@ function startShift() {
   
   routeLayer.setWhere(finalWhere);
   routeLayer.addTo(map);
-
   routeLayer.query().where(finalWhere).bounds(function(error, latLngBounds){
     if(!error && latLngBounds) map.fitBounds(latLngBounds);
   });
 
+  // 3. LOAD HISTORY (The "80% Done" request)
+  loadTodaysBreadcrumbs();
+
+  // 4. START TRACKING
   startTracking();
+}
+
+function loadTodaysBreadcrumbs() {
+    // Calculate timestamp for 24 hours ago
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 24);
+    
+    // Query breadcrumbs for this truck/operator created recently
+    let whereClause = `Timestamp > ${yesterday.getTime()}`;
+    if (currentTruck) whereClause += ` AND Truck_Num = ${currentTruck}`;
+    
+    // Add them to the map permanently for this session
+    breadcrumbLayer.setWhere(whereClause);
+    breadcrumbLayer.addTo(map);
 }
 
 function startTracking() {
@@ -178,7 +191,7 @@ function success(position) {
   lastKnownLocation = [lat, lng];
 
   if (!window.myLocationMarker) {
-    window.myLocationMarker = L.circleMarker([lat, lng], { color: 'blue', radius: 8 }).addTo(map);
+    window.myLocationMarker = L.circleMarker([lat, lng], { color: '#00FF00', radius: 10, fillOpacity: 1 }).addTo(map); // Bright Green for "ME"
   } else {
     window.myLocationMarker.setLatLng([lat, lng]);
   }
@@ -190,11 +203,34 @@ function success(position) {
     properties: {
       Truck_Num: parseInt(currentTruck) || 0,
       Operator: currentOperator,
-      Type_Truck: "Not Specified",
       Timestamp: new Date().getTime()
     }
   };
 
   L.esri.request(breadcrumbLayerUrl + "/addFeatures", { features: [feature] }, function(error, response){});
 }
+
 function error() { console.log("GPS Error"); }
+
+// Map Buttons (Home, Locate)
+L.Control.Home = L.Control.extend({
+    onAdd: function(map) {
+        const btn = L.DomUtil.create('div', 'custom-map-btn');
+        btn.innerHTML = "🏠";
+        btn.onclick = function() { location.reload(); }; // Reload page to reset
+        return btn;
+    }
+});
+new L.Control.Home({ position: 'topleft' }).addTo(map);
+
+L.Control.Locate = L.Control.extend({
+    onAdd: function(map) {
+        const btn = L.DomUtil.create('div', 'custom-map-btn');
+        btn.innerHTML = "🎯";
+        btn.onclick = function() {
+            if(lastKnownLocation) map.setView(lastKnownLocation, 17);
+        };
+        return btn;
+    }
+});
+new L.Control.Locate({ position: 'topleft' }).addTo(map);
