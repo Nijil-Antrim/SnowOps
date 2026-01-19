@@ -78,7 +78,7 @@ button:active { background-color: #5a0000; }
 /* 5. The "Current Route" Label (Floating on Map) */
 #activeOperatorLabel {
     position: absolute;
-    top: 20px; /* Positioned just below the header area inside map */
+    top: 70px; /* Positioned just below the header area inside map */
     left: 50%;
     transform: translateX(-50%);
     background-color: rgba(255, 255, 255, 0.95);
@@ -148,3 +148,4 @@ button:active { background-color: #5a0000; }
     background: transparent;
     border: none;
 }
+
