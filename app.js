@@ -13,51 +13,21 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 L.control.zoom({ position: 'topleft' }).addTo(map);
 L.control.scale({ position: 'bottomleft', imperial: true, metric: false }).addTo(map);
 
-// --- GLOBAL VARIABLES ---
+// --- STATE VARIABLES ---
 let allRouteData = []; 
 let currentOperator = "";
 let currentTruck = "";
 let watchId = null;
 let lastKnownLocation = null;
+let isPlowing = false; // Is the "Record" button on?
+let isFollowing = false; // Should the map move automatically?
 
 // --- LAYERS ---
 const routeLayer = L.esri.featureLayer({
   url: routeLayerUrl,
-// ... inside routeLayer config ...
-  style: { color: 'red', weight: 4 }, // Routes are RED
+  style: { color: 'red', weight: 4 }, // Clean Red Lines (NO LABELS)
   onEachFeature: function(feature, layer) {
-    
-    // --- NEW: ADD LABELS ALONG THE PATH ---
-    const opName = feature.properties.Operator || "";
-    const truckNum = feature.properties.Truck_Num || "?";
-    
-    // Shorter label format to save space: "J. Doe (T-41)"
-    // We take the first letter of the first name, plus the last name.
-    let shortName = opName;
-    const nameParts = opName.split(" ");
-    if(nameParts.length > 1) {
-         shortName = nameParts[0][0] + ". " + nameParts[nameParts.length - 1];
-    }
-    
-    const labelText = `${shortName} (T-${truckNum})`;
-
-    // Use the new plugin function .setText() instead of .bindTooltip()
-    // Only apply if it's a line (polyline or polygon)
-    if (layer.setText) {
-        layer.setText(labelText, {
-            center: true,      // Place in middle of segment
-            below: false,      // Place directly on top of line
-            offset: 0,
-            orientation: 'flip', // Ensures text isn't upside down
-            // Connect to our new CSS class
-            attributes: { class: 'route-text-path' } 
-        });
-    }
-    // -------------------------------
-
-    // Click Logic (Popup) - Stays the same
     layer.on('click', function(e) {
-      // ... existing popup code ...
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
       const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
@@ -75,7 +45,7 @@ const routeLayer = L.esri.featureLayer({
   }
 });
 
-// Breadcrumb Layer (History = Blue Dots)
+// Breadcrumb Layer (Blue Dots)
 const breadcrumbLayer = L.esri.featureLayer({
     url: breadcrumbLayerUrl,
     pointToLayer: function (geojson, latlng) {
@@ -83,15 +53,11 @@ const breadcrumbLayer = L.esri.featureLayer({
     }
 });
 
-// --- SMART DROPDOWNS ---
+// --- DROPDOWN LOGIC ---
 routeLayer.query().where("1=1").run(function(error, featureCollection){
     if (error) { console.error(error); return; }
-
     featureCollection.features.forEach(f => {
-        allRouteData.push({
-            operator: f.properties.Operator,
-            truck: f.properties.Truck_Num
-        });
+        allRouteData.push({ operator: f.properties.Operator, truck: f.properties.Truck_Num });
     });
     updateDropdowns(null);
 });
@@ -107,7 +73,6 @@ function updateDropdowns(changedBy) {
         let matchTruck = (selectedTruck === "") || (item.truck == selectedTruck); 
         return matchOp && matchTruck;
     });
-
     if (filteredData.length === 0) filteredData = allRouteData;
 
     const availableOps = new Set(filteredData.map(i => i.operator).filter(x => x));
@@ -122,7 +87,6 @@ function updateDropdowns(changedBy) {
             opSelect.appendChild(opt);
         });
     }
-
     if (changedBy !== "truck") {
         truckSelect.innerHTML = '<option value="">-- Select Truck --</option>';
         Array.from(availableTrucks).sort((a,b)=>a-b).forEach(num => {
@@ -133,12 +97,11 @@ function updateDropdowns(changedBy) {
         });
     }
 }
-
 document.getElementById("operatorInput").addEventListener("change", () => updateDropdowns("operator"));
 document.getElementById("truckInput").addEventListener("change", () => updateDropdowns("truck"));
 
 
-// --- MAIN START FUNCTION ---
+// --- MAIN FUNCTIONS ---
 function startShift() {
   currentOperator = document.getElementById('operatorInput').value;
   currentTruck = document.getElementById('truckInput').value;
@@ -148,9 +111,10 @@ function startShift() {
     return;
   }
 
+  // UI Updates
   document.getElementById('panel').style.display = 'none';
+  document.getElementById('plowControlBar').style.display = 'block'; // Show Plow Button
   
-  // Update Label
   const label = document.getElementById('activeOperatorLabel');
   label.style.display = 'block';
   let labelText = "Viewing Route";
@@ -158,7 +122,7 @@ function startShift() {
   if(currentTruck) labelText += ` — Truck ${currentTruck}`;
   label.innerText = labelText;
 
-  // Filter Logic
+  // Filter Map
   let sqlParts = [];
   if (currentOperator) sqlParts.push(`Operator = '${currentOperator}'`);
   if (currentTruck) sqlParts.push(`Truck_Num = ${currentTruck}`);
@@ -174,21 +138,32 @@ function startShift() {
   startTracking();
 }
 
-function loadTodaysBreadcrumbs() {
-    const yesterday = new Date();
-    yesterday.setHours(yesterday.getHours() - 24);
+// --- NEW PLOW BUTTON LOGIC ---
+function togglePlowing() {
+    const btn = document.getElementById('plowBtn');
     
-    let whereClause = `Timestamp > ${yesterday.getTime()}`;
-    if (currentTruck) whereClause += ` AND Truck_Num = ${currentTruck}`;
-    
-    breadcrumbLayer.setWhere(whereClause);
-    breadcrumbLayer.addTo(map);
+    if (isPlowing) {
+        // Turn OFF
+        isPlowing = false;
+        btn.innerHTML = "START PLOWING (Recording Off)";
+        btn.style.backgroundColor = "#555"; // Grey
+        btn.style.animation = "none";
+    } else {
+        // Turn ON
+        isPlowing = true;
+        btn.innerHTML = "STOP PLOWING (Recording ON)";
+        btn.style.backgroundColor = "#28a745"; // Green
+        // Add a pulsing effect to show it's active
+        btn.style.boxShadow = "0 0 10px #28a745";
+    }
 }
 
+// --- GPS & TRACKING LOGIC ---
 function startTracking() {
   if (!navigator.geolocation) { alert("Geolocation not supported"); return; }
+  
   watchId = navigator.geolocation.watchPosition(success, error, {
-    enableHighAccuracy: true, maximumAge: 0, timeout: 10000
+    enableHighAccuracy: true, maximumAge: 0, timeout: 5000
   });
 }
 
@@ -197,116 +172,96 @@ function success(position) {
   const lng = position.coords.longitude;
   lastKnownLocation = [lat, lng];
 
+  document.getElementById("connectionStatus").innerText = "GPS Signal: Good";
+
+  // 1. UPDATE ICON (TRACTOR EMOJI)
   if (!window.myLocationMarker) {
-    // Current location is GREEN
-    window.myLocationMarker = L.circleMarker([lat, lng], { color: '#00FF00', radius: 10, fillOpacity: 1 }).addTo(map); 
+    const plowIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: "<div style='font-size:30px;'>🚜</div>",
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+    });
+    window.myLocationMarker = L.marker([lat, lng], { icon: plowIcon }).addTo(map);
   } else {
     window.myLocationMarker.setLatLng([lat, lng]);
   }
 
-  const feature = {
-    type: "Feature",
-    geometry: { type: "Point", coordinates: [lng, lat] },
-    properties: {
-      Truck_Num: parseInt(currentTruck) || 0,
-      Operator: currentOperator,
-      Timestamp: new Date().getTime()
-    }
-  };
+  // 2. AUTO-FOLLOW LOGIC (Like Google Maps)
+  if (isFollowing) {
+      map.setView([lat, lng], 17); // Keep map centered on truck
+  }
 
-  L.esri.request(breadcrumbLayerUrl + "/addFeatures", { features: [feature] }, function(error, response){});
+  // 3. RECORDING LOGIC (Only if button is GREEN)
+  if (isPlowing) {
+      const feature = {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [lng, lat] },
+        properties: {
+          Truck_Num: parseInt(currentTruck) || 0,
+          Operator: currentOperator,
+          Timestamp: new Date().getTime()
+        }
+      };
+
+      L.esri.request(breadcrumbLayerUrl + "/addFeatures", { features: [feature] }, function(error, response){
+          if(error) {
+              console.log("Upload Error: " + error);
+              document.getElementById("connectionStatus").innerText = "GPS Good - Upload Failed!";
+          } else {
+              // OPTIONAL: Draw the blue dot locally immediately so they see it
+              L.circleMarker([lat, lng], { color: 'blue', radius: 4, fillOpacity: 0.5 }).addTo(map);
+          }
+      });
+  }
 }
 
-function error() { console.log("GPS Error"); }
+function error() { 
+    document.getElementById("connectionStatus").innerText = "GPS Signal: LOST";
+}
 
-// --- CUSTOM MAP BUTTONS (Top Left Stack) ---
+// Map User Interacted? Stop Following.
+map.on('dragstart', function() {
+    isFollowing = false; // If user touches screen, stop auto-moving
+});
 
-// 1. Home Button
+// --- LOAD HISTORY ---
+function loadTodaysBreadcrumbs() {
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 24);
+    let whereClause = `Timestamp > ${yesterday.getTime()}`;
+    if (currentTruck) whereClause += ` AND Truck_Num = ${currentTruck}`;
+    breadcrumbLayer.setWhere(whereClause);
+    breadcrumbLayer.addTo(map);
+}
+
+// --- CONTROLS ---
 L.Control.Home = L.Control.extend({
     onAdd: function(map) {
         const btn = L.DomUtil.create('div', 'custom-map-btn');
         btn.innerHTML = "🏠";
-        btn.title = "Reset / Logout";
         btn.onclick = function() { location.reload(); }; 
         return btn;
     }
 });
 new L.Control.Home({ position: 'topleft' }).addTo(map);
 
-// 2. Locate Button
+// UPDATED LOCATE BUTTON (Toggle Follow Mode)
 L.Control.Locate = L.Control.extend({
     onAdd: function(map) {
         const btn = L.DomUtil.create('div', 'custom-map-btn');
         btn.innerHTML = "🎯";
-        btn.title = "Find Me";
+        btn.title = "Follow Me";
         btn.onclick = function() {
-            if(lastKnownLocation) map.setView(lastKnownLocation, 17);
-            else alert("Waiting for GPS...");
+            if(lastKnownLocation) {
+                isFollowing = true; // Turn ON auto-follow
+                map.setView(lastKnownLocation, 17);
+            } else {
+                alert("Waiting for GPS...");
+            }
         };
         return btn;
     }
 });
 new L.Control.Locate({ position: 'topleft' }).addTo(map);
-
-// 3. Legend Button
-L.Control.Legend = L.Control.extend({
-    onAdd: function(map) {
-        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-        
-        // The Button
-        const btn = L.DomUtil.create('a', 'custom-map-btn', container);
-        btn.innerHTML = "📝"; 
-        btn.title = "Show Legend";
-        btn.href = "#";
-        btn.style.width = "30px"; 
-        btn.style.height = "30px";
-        btn.style.lineHeight = "30px";
-        btn.style.display = "block";
-        btn.style.textAlign = "center";
-        btn.style.textDecoration = "none";
-        btn.style.backgroundColor = "white";
-        btn.style.fontSize = "18px";
-
-        // The Legend Box (Hidden by default)
-        const legendBox = L.DomUtil.create('div', '', container);
-        legendBox.style.display = 'none';
-        legendBox.style.backgroundColor = 'white';
-        legendBox.style.padding = '10px';
-        legendBox.style.minWidth = '150px';
-        legendBox.style.position = 'absolute';
-        legendBox.style.top = '0px';
-        legendBox.style.left = '35px';
-        legendBox.style.border = '2px solid rgba(0,0,0,0.2)';
-        legendBox.style.borderRadius = '4px';
-
-        legendBox.innerHTML = `
-            <strong>Map Legend</strong><br><br>
-            <div style="display:flex; align-items:center; margin-bottom:5px;">
-                <div style="width:20px; height:4px; background:red; margin-right:8px;"></div>
-                <span>Routes</span>
-            </div>
-            <div style="display:flex; align-items:center; margin-bottom:5px;">
-                <div style="width:10px; height:10px; background:#00FF00; border-radius:50%; margin-right:8px;"></div>
-                <span>My Live Location</span>
-            </div>
-            <div style="display:flex; align-items:center;">
-                <div style="width:10px; height:10px; background:blue; border-radius:50%; margin-right:8px;"></div>
-                <span>History (Work Done)</span>
-            </div>
-        `;
-
-        btn.onclick = function(e) {
-            e.preventDefault();
-            if (legendBox.style.display === 'none') {
-                legendBox.style.display = 'block';
-            } else {
-                legendBox.style.display = 'none';
-            }
-        };
-
-        return container;
-    }
-});
-new L.Control.Legend({ position: 'topleft' }).addTo(map);
-
 
