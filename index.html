@@ -10,17 +10,14 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
-
-  <script src="https://unpkg.com/leaflet-textpath@1.2.3/leaflet.textpath.js"></script>
 
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <div id="header">
-    <img src="logo.png" alt="Logo" onerror="this.style.display='none'"> <h1>Antrim Township Snow Plowing Route Map</h1>
+    <img src="logo.png" alt="Logo" onerror="this.style.display='none'"> 
+    <h1>Antrim Township Snow Plowing Route Map</h1>
   </div>
 
   <div id="panel">
@@ -31,14 +28,18 @@
     <label>Truck Number:</label>
     <select id="truckInput"><option value="">-- Loading Trucks... --</option></select>
     
-    <button onclick="startShift()">Load Routes & Start Tracking</button>
+    <button onclick="startShift()">Load Routes & Open Map</button>
   </div>
 
   <div id="map">
       <div id="activeOperatorLabel"></div>
+
+      <div id="plowControlBar" style="display:none;">
+          <div id="connectionStatus">GPS: Searching...</div>
+          <button id="plowBtn" onclick="togglePlowing()">START PLOWING (Recording Off)</button>
+      </div>
   </div>
 
   <script src="app.js"></script>
 </body>
-
 </html>
